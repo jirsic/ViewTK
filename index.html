@@ -122,6 +122,16 @@
   .kbd { font-family: var(--mono); font-size: 10px; padding: 1px 5px; border: 1px solid var(--line); border-radius: 2px; color: var(--muted); }
 
   /* group toggle */
+  .target-lab { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .target-toggle { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .target-btn {
+    flex: 1; min-width: 60px; padding: 8px 6px; border-radius: 2px; cursor: pointer;
+    font-family: var(--mono); font-size: 11px; text-align: center;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+    display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.12s;
+  }
+  .target-btn .tsw { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+  .target-btn.on { border-color: var(--signal); color: var(--text); background: color-mix(in srgb, var(--signal) 10%, transparent); }
   .grp-toggle { display: flex; gap: 8px; margin-bottom: 10px; }
   .grp-btn {
     flex: 1; padding: 9px; border-radius: 2px; cursor: pointer;
@@ -157,6 +167,7 @@
   .pt[data-g="PFA"] .idx { background: var(--pfa); }
   .pt .coord { color: var(--muted); line-height: 1.4; }
   .pt .coord b { color: var(--text); font-weight: 400; }
+  .psurf { color: var(--signal); border: 1px solid var(--line); border-radius: 2px; padding: 0 4px; margin-left: 4px; font-size: 9px; }
   .pt .del { color: var(--muted); border: none; background: none; cursor: pointer; font-size: 15px; padding: 0 4px; opacity: 0; transition: opacity 0.1s, color 0.1s; }
   .pt:hover .del { opacity: 1; }
   .pt .del:hover { color: var(--warn); }
@@ -233,13 +244,15 @@
     <div class="sect">
       <div class="sect-h">Placement</div>
       <div class="sect-b">
+        <div class="target-lab">target surface</div>
+        <div class="target-toggle" id="targetToggle"><!-- filled after meshes load --></div>
         <div class="grp-toggle">
           <div class="grp-btn on" data-g="RF"><span class="swatch"></span>RF</div>
           <div class="grp-btn" data-g="PFA"><span class="swatch"></span>PFA</div>
         </div>
         <button class="btn" id="placeBtn" disabled><span>Place points</span></button>
         <div style="margin-top:9px; font-size:11px; color:var(--muted); line-height:1.6;">
-          Pick a group, toggle on, click the surface to drop a lesion.
+          Pick a target surface and group, toggle on, click to drop a lesion.
           <span class="kbd">P</span> toggle · <span class="kbd">Esc</span> exit
         </div>
       </div>
@@ -397,6 +410,7 @@ const markerGroup = new THREE.Group(); scene.add(markerGroup);
 
 const GROUPS = { RF: 0xffb020, PFA: 0xa78bfa };
 let activeGroup = 'RF';
+let targetMesh = -1;              // index into meshes[], or -1 for "any/both"
 let sizeScale = 1.0;
 const points = []; // { pos:Vector3(local), obj:Mesh, group, note }
 
@@ -438,18 +452,23 @@ function tryPlace(e) {
   ndc.x = ((e.clientX - r.left) / r.width) * 2 - 1;
   ndc.y = -((e.clientY - r.top) / r.height) * 2 + 1;
   raycaster.setFromCamera(ndc, camera);
-  const hit = raycaster.intersectObjects(meshes.map(m => m.obj), false)[0];
+  // restrict picking to the target surface, unless target is "any" (-1)
+  const targets = targetMesh >= 0 ? [meshes[targetMesh].obj] : meshes.map(m => m.obj);
+  const hit = raycaster.intersectObjects(targets, false)[0];
   if (!hit) { flash('No surface under cursor', true); return; }
-  addPoint(hit.point.clone(), activeGroup, '');
+  // which mesh did we actually hit?
+  const hitIdx = meshes.findIndex(m => m.obj === hit.object);
+  addPoint(hit.point.clone(), activeGroup, '', hitIdx);
 }
 function markerRadius() { return meshRadius * 0.012 * sizeScale; }
-function addPoint(worldPos, group, note) {
+function addPoint(worldPos, group, note, meshIdx) {
   const geo = new THREE.SphereGeometry(markerRadius(), 20, 16);
   const mat = new THREE.MeshStandardMaterial({ color: GROUPS[group], emissive: 0x000000, roughness: 0.4 });
   mat.emissive.setHex(GROUPS[group]); mat.emissiveIntensity = 0.15;
   const m = new THREE.Mesh(geo, mat); m.position.copy(worldPos); markerGroup.add(m);
   const local = modelGroup.worldToLocal(worldPos.clone());
-  points.push({ pos: local, obj: m, group, note });
+  const surface = (meshIdx != null && meshIdx >= 0 && meshes[meshIdx]) ? meshes[meshIdx].name : '';
+  points.push({ pos: local, obj: m, group, note, surface });
   renderPointList();
 }
 function refreshMarkerSizes() {
@@ -521,6 +540,33 @@ function renderMeshInfo() {
     const m = meshes[+s.dataset.op]; m.mat.opacity = parseFloat(s.value); m.mat.depthWrite = m.mat.opacity > 0.98;
   }));
   document.getElementById('hudmeta').textContent = meshes.map(m => `${m.verts.toLocaleString()} v`).join(' + ');
+  buildTargetToggle();
+}
+function shortLabel(name) {
+  // "LA ENDO (CT).vtk" -> "LA"; fall back to trimmed name
+  const m = name.match(/^([A-Za-z]{1,4})\b/);
+  return m ? m[1].toUpperCase() : trimName(name);
+}
+function buildTargetToggle() {
+  const wrap = document.getElementById('targetToggle');
+  // default target: first mesh, if not yet chosen
+  if (targetMesh === -1 && meshes.length) targetMesh = 0;
+  if (targetMesh >= meshes.length) targetMesh = meshes.length ? 0 : -1;
+  let html = meshes.map((m, i) =>
+    `<div class="target-btn ${i === targetMesh ? 'on' : ''}" data-t="${i}">
+       <span class="tsw" style="background:#${MESH_TINTS[i % MESH_TINTS.length].toString(16).padStart(6,'0')}"></span>${shortLabel(m.name)}
+     </div>`).join('');
+  if (meshes.length > 1) html += `<div class="target-btn ${targetMesh === -1 ? 'on' : ''}" data-t="-1">Any</div>`;
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('.target-btn').forEach(b => b.addEventListener('click', () => {
+    targetMesh = parseInt(b.dataset.t, 10);
+    wrap.querySelectorAll('.target-btn').forEach(x => x.classList.toggle('on', x === b));
+    if (placing) document.getElementById('modetext').textContent = placingLabel();
+  }));
+}
+function placingLabel() {
+  const surf = targetMesh >= 0 && meshes[targetMesh] ? shortLabel(meshes[targetMesh].name) : 'any';
+  return `Placing ${activeGroup} · ${surf}`;
 }
 function trimName(n) { return n.length > 18 ? n.slice(0, 15) + '…' : n; }
 
@@ -558,7 +604,8 @@ async function loadSavedMap(mapName) {
     (data.points || []).forEach(pt => {
       const local = new THREE.Vector3(pt.x, pt.y, pt.z);
       const world = modelGroup.localToWorld(local.clone());
-      addPoint(world, (pt.group === 'PFA' ? 'PFA' : 'RF'), pt.comment || '');
+      const idx = pt.surface ? meshes.findIndex(m => m.name === pt.surface) : -1;
+      addPoint(world, (pt.group === 'PFA' ? 'PFA' : 'RF'), pt.comment || '', idx);
     });
     const n = parseInt((mapName.match(/\d+/) || ['1'])[0], 10);
     document.getElementById('mapNum').value = isNaN(n) ? 1 : n;
@@ -580,7 +627,7 @@ function renderPointList() {
     <div class="pt" data-g="${p.group}" data-i="${i}">
       <div class="pt-head">
         <span class="idx">${i + 1}</span>
-        <span class="coord"><b>x</b> ${p.pos.x.toFixed(2)} <b>y</b> ${p.pos.y.toFixed(2)} <b>z</b> ${p.pos.z.toFixed(2)}</span>
+        <span class="coord"><b>x</b> ${p.pos.x.toFixed(2)} <b>y</b> ${p.pos.y.toFixed(2)} <b>z</b> ${p.pos.z.toFixed(2)}${p.surface ? ` <span class="psurf">${shortLabel(p.surface)}</span>` : ''}</span>
         <button class="del" data-del="${i}" title="Remove">×</button>
       </div>
       <div class="pt-body">
@@ -623,7 +670,7 @@ function setPlacing(on) {
   placing = on;
   document.getElementById('placeBtn').classList.toggle('active', on);
   const badge = document.getElementById('modebadge'); badge.classList.toggle('placing', on);
-  document.getElementById('modetext').textContent = on ? `Placing ${activeGroup}` : 'Orbit';
+  document.getElementById('modetext').textContent = on ? placingLabel() : 'Orbit';
   canvas.style.cursor = on ? 'crosshair' : 'grab';
 }
 document.getElementById('placeBtn').addEventListener('click', () => setPlacing(!placing));
@@ -643,7 +690,7 @@ document.getElementById('saveBtn').addEventListener('click', () => {
     space: 'vtk-model-coordinates',
     saved: new Date().toISOString(),
     counts: { RF: points.filter(p => p.group === 'RF').length, PFA: points.filter(p => p.group === 'PFA').length },
-    points: points.map((p, i) => ({ id: i + 1, group: p.group, comment: p.note || '', x: p.pos.x, y: p.pos.y, z: p.pos.z })),
+    points: points.map((p, i) => ({ id: i + 1, group: p.group, surface: p.surface || '', comment: p.note || '', x: p.pos.x, y: p.pos.y, z: p.pos.z })),
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name + '.json'; a.click();
