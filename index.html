@@ -525,15 +525,16 @@ function renderMeshInfo() {
 function trimName(n) { return n.length > 18 ? n.slice(0, 15) + '…' : n; }
 
 /* ---------- Default meshes + saved-map loading (runs on startup) ---------- */
-const DEFAULT_MESHES = ['mesh1.vtk', 'mesh2.vtk'];
+const DEFAULT_MESHES = ['LA ENDO (CT).vtk', 'RA ENDO (CT).vtk'];
 async function bootstrap() {
   const params = new URLSearchParams(location.search);
   const mapName = params.get('map'); // e.g. EndoMaze5
-  // 1) try to load default meshes shipped next to index.html
+  // 1) try to load default meshes shipped next to index.html.
+  //    encodeURIComponent handles the spaces and parentheses in the filenames.
   let loadedAny = false;
   for (let i = 0; i < DEFAULT_MESHES.length; i++) {
     try {
-      const res = await fetch(DEFAULT_MESHES[i]);
+      const res = await fetch(encodeURIComponent(DEFAULT_MESHES[i]));
       if (!res.ok) continue;
       const buf = await res.arrayBuffer();
       if (addMeshFromBuffer(buf, DEFAULT_MESHES[i], i)) loadedAny = true;
@@ -550,7 +551,7 @@ async function bootstrap() {
 async function loadSavedMap(mapName) {
   const file = mapName.endsWith('.json') ? mapName : mapName + '.json';
   try {
-    const res = await fetch(file);
+    const res = await fetch(encodeURIComponent(file));
     if (!res.ok) { flash(`${file} not found in repo`, true); return; }
     const data = await res.json();
     clearPoints();
