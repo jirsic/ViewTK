@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -703,10 +703,10 @@ sizeSlider.addEventListener('input', () => {
 const PROJECTIONS = {
   AP:  new THREE.Vector3( 0, -1,  0),
   PA:  new THREE.Vector3( 0,  1,  0),
-  RL:  new THREE.Vector3(-1,  0,  0),
-  LL:  new THREE.Vector3( 1,  0,  0),
-  RAO: new THREE.Vector3(-0.5, -0.87, 0),
-  LAO: new THREE.Vector3( 0.64, -0.77, 0),
+  RL:  new THREE.Vector3( 1,  0,  0),
+  LL:  new THREE.Vector3(-1,  0,  0),
+  RAO: new THREE.Vector3( 0.5, -0.87, 0),
+  LAO: new THREE.Vector3(-0.64, -0.77, 0),
 };
 function setProjection(name) {
   const dir = PROJECTIONS[name]; if (!dir) return;
