@@ -80,6 +80,22 @@
   #modebadge.placing .dot { background: var(--active); box-shadow: 0 0 8px var(--active); }
   #modebadge.placing { color: var(--active); border-color: var(--active); }
 
+  #projections {
+    position: absolute; bottom: 16px; right: 16px;
+    display: grid; grid-template-columns: 1fr; gap: 6px;
+    background: rgba(17,23,33,0.8); backdrop-filter: blur(6px);
+    padding: 8px; border: 1px solid var(--line); border-radius: 3px;
+  }
+  #projections button {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.05em;
+    padding: 7px 12px; min-width: 46px; cursor: pointer;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+    border-radius: 2px; transition: all 0.1s;
+  }
+  #projections button:hover { border-color: var(--signal); color: var(--signal); }
+  #projections button:active { background: color-mix(in srgb, var(--signal) 15%, transparent); }
+  #projections.hidden { display: none; }
+
   /* ---- Side panel ---- */
   #panel { background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; overflow: hidden; }
   .sect { border-bottom: 1px solid var(--line); }
@@ -224,6 +240,14 @@
       <div id="hudmeta"></div>
     </div>
     <div id="modebadge"><span class="dot"></span><span id="modetext">Orbit</span></div>
+    <div id="projections">
+      <button data-proj="AP" title="Anterior–Posterior">AP</button>
+      <button data-proj="PA" title="Posterior–Anterior">PA</button>
+      <button data-proj="RAO" title="Right Anterior Oblique">RAO</button>
+      <button data-proj="LAO" title="Left Anterior Oblique">LAO</button>
+      <button data-proj="RL" title="Right Lateral">RL</button>
+      <button data-proj="LL" title="Left Lateral">LL</button>
+    </div>
     <div id="drop">
       <div class="glyph"></div>
       <h2>Drop one or two <code>.vtk</code> files</h2>
@@ -664,6 +688,35 @@ sizeSlider.addEventListener('input', () => {
   document.getElementById('sizeVal').textContent = sizeScale.toFixed(1) + '×';
   refreshMarkerSizes();
 });
+
+/* ---------- Standard cardiac projections ----------
+   Direction = vector FROM target TO camera, in the recentered model frame.
+   CT convention assumed: +X left, +Y posterior, +Z superior.
+   (viewer looks at the heart from the named side)
+   AP  = from anterior  -> camera at -Y
+   PA  = from posterior -> camera at +Y
+   RL  = from right     -> camera at -X
+   LL  = from left      -> camera at +X
+   RAO = right + anterior oblique (~30° from AP toward right)
+   LAO = left + anterior oblique (~40° from AP toward left)
+*/
+const PROJECTIONS = {
+  AP:  new THREE.Vector3( 0, -1,  0),
+  PA:  new THREE.Vector3( 0,  1,  0),
+  RL:  new THREE.Vector3(-1,  0,  0),
+  LL:  new THREE.Vector3( 1,  0,  0),
+  RAO: new THREE.Vector3(-0.5, -0.87, 0),
+  LAO: new THREE.Vector3( 0.64, -0.77, 0),
+};
+function setProjection(name) {
+  const dir = PROJECTIONS[name]; if (!dir) return;
+  const radius = ctrl.spherical.radius; // keep current zoom
+  const v = dir.clone().normalize().multiplyScalar(radius);
+  ctrl.spherical.setFromVector3(v);
+  applyCamera();
+}
+document.querySelectorAll('#projections button').forEach(b =>
+  b.addEventListener('click', () => setProjection(b.dataset.proj)));
 
 /* ---------- Placing mode ---------- */
 function setPlacing(on) {
