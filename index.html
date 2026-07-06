@@ -95,6 +95,16 @@
   .stat-row span:first-child { color: var(--muted); }
   .stat-row span:last-child { font-variant-numeric: tabular-nums; }
 
+  .mesh-item { padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .mesh-item:last-child { border-bottom: none; }
+  .mesh-item-h { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; }
+  .mesh-item-h .mswatch { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+  .mesh-item-h .mesh-name { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mesh-item-h .mesh-verts { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .op-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .op-row span { width: 46px; }
+  .op-slider { flex: 1; accent-color: var(--signal); cursor: pointer; }
+
   .btn {
     width: 100%; padding: 10px; background: var(--panel-2);
     border: 1px solid var(--line); color: var(--text);
@@ -205,9 +215,9 @@
     <div id="modebadge"><span class="dot"></span><span id="modetext">Orbit</span></div>
     <div id="drop">
       <div class="glyph"></div>
-      <h2>Drop a legacy <code>.vtk</code> file</h2>
-      <p>or <label for="fileInput">browse</label> — surface stays in your browser, nothing is uploaded</p>
-      <input type="file" id="fileInput" accept=".vtk">
+      <h2>Drop one or two <code>.vtk</code> files</h2>
+      <p>or <label for="fileInput">browse</label> — surfaces stay in your browser, nothing is uploaded</p>
+      <input type="file" id="fileInput" accept=".vtk" multiple>
     </div>
     <div class="toast" id="toast"></div>
   </div>
@@ -380,7 +390,9 @@ const key = new THREE.DirectionalLight(0xffffff, 0.8); key.position.set(1, 1, 1)
 const fill = new THREE.DirectionalLight(0x88aaff, 0.35); fill.position.set(-1, -0.5, -1); scene.add(fill);
 
 const modelGroup = new THREE.Group(); scene.add(modelGroup);
-let mesh = null, meshRadius = 1, meshCenter = new THREE.Vector3();
+const meshes = [];               // { obj, name, mat }  — one or more surfaces, overlaid
+let meshRadius = 1, meshCenter = new THREE.Vector3();
+const MESH_TINTS = [0x4fd1c5, 0xf0709a]; // teal, rose — distinguish overlaid surfaces
 const markerGroup = new THREE.Group(); scene.add(markerGroup);
 
 const GROUPS = { RF: 0xffb020, PFA: 0xa78bfa };
@@ -421,12 +433,12 @@ canvas.addEventListener('wheel', e => {
 /* ---------- Picking ---------- */
 const raycaster = new THREE.Raycaster(); const ndc = new THREE.Vector2(); let placing = false;
 function tryPlace(e) {
-  if (!mesh) return;
+  if (!meshes.length) return;
   const r = canvas.getBoundingClientRect();
   ndc.x = ((e.clientX - r.left) / r.width) * 2 - 1;
   ndc.y = -((e.clientY - r.top) / r.height) * 2 + 1;
   raycaster.setFromCamera(ndc, camera);
-  const hit = raycaster.intersectObject(mesh, false)[0];
+  const hit = raycaster.intersectObjects(meshes.map(m => m.obj), false)[0];
   if (!hit) { flash('No surface under cursor', true); return; }
   addPoint(hit.point.clone(), activeGroup, '');
 }
@@ -446,36 +458,112 @@ function refreshMarkerSizes() {
 }
 function recolorMarker(p) { p.obj.material.color.setHex(GROUPS[p.group]); p.obj.material.emissive.setHex(GROUPS[p.group]); }
 
-/* ---------- Load ---------- */
-function loadMeshFromBuffer(buffer, filename) {
+/* ---------- Load ----------
+   Meshes are ADDED (overlaid), not replaced. clearMeshes() resets first when
+   the user drops their own files or when defaults load. */
+function clearMeshes() {
+  meshes.forEach(m => { modelGroup.remove(m.obj); m.obj.geometry.dispose(); m.obj.material.dispose(); });
+  meshes.length = 0;
+}
+function addMeshFromBuffer(buffer, filename, tintIndex) {
   let parsed;
-  try { parsed = parseVTK(buffer); } catch (err) { flash('Parse failed: ' + err.message, true); return; }
-  if (!parsed.positions.length) { flash('No POINTS found in file', true); return; }
-  if (mesh) { modelGroup.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
-  clearPoints();
+  try { parsed = parseVTK(buffer); } catch (err) { flash('Parse failed: ' + err.message, true); return false; }
+  if (!parsed.positions.length) { flash('No POINTS in ' + filename, true); return false; }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(parsed.positions, 3));
   if (parsed.indices) geo.setIndex(new THREE.BufferAttribute(parsed.indices, 1));
-  geo.computeVertexNormals(); geo.computeBoundingSphere();
-  const bs = geo.boundingSphere; meshRadius = bs.radius || 1; meshCenter.copy(bs.center);
-  modelGroup.position.copy(meshCenter).multiplyScalar(-1);
+  geo.computeVertexNormals();
   const hasFaces = !!parsed.indices;
-  const mat = new THREE.MeshStandardMaterial({ color: 0x4fd1c5, roughness: 0.55, metalness: 0.0, side: THREE.DoubleSide });
-  mesh = hasFaces ? new THREE.Mesh(geo, mat) : new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x4fd1c5, size: meshRadius * 0.006 }));
-  modelGroup.add(mesh);
-  ctrl.target.set(0, 0, 0); ctrl.spherical.set(meshRadius * 2.6, Math.PI / 2.3, Math.PI / 4); applyCamera();
-  const nVerts = parsed.positions.length / 3; const nTris = parsed.indices ? parsed.indices.length / 3 : 0;
+  const tint = MESH_TINTS[tintIndex % MESH_TINTS.length];
+  const mat = new THREE.MeshStandardMaterial({
+    color: tint, roughness: 0.55, metalness: 0.0, side: THREE.DoubleSide,
+    transparent: true, opacity: meshes.length === 0 ? 1.0 : 0.5, depthWrite: meshes.length === 0,
+  });
+  const obj = hasFaces ? new THREE.Mesh(geo, mat)
+                       : new THREE.Points(geo, new THREE.PointsMaterial({ color: tint, size: 1 }));
+  modelGroup.add(obj);
+  meshes.push({ obj, name: filename, mat, verts: parsed.positions.length / 3, tris: parsed.indices ? parsed.indices.length / 3 : 0, hasFaces });
+  reframe();
   document.getElementById('drop').classList.add('hidden');
-  document.getElementById('meshinfo').innerHTML = `
-    <div class="stat-row"><span>file</span><span>${trimName(filename)}</span></div>
-    <div class="stat-row"><span>vertices</span><span>${nVerts.toLocaleString()}</span></div>
-    <div class="stat-row"><span>${hasFaces ? 'triangles' : 'type'}</span><span>${hasFaces ? nTris.toLocaleString() : 'point cloud'}</span></div>
-    <div class="stat-row"><span>radius</span><span>${meshRadius.toPrecision(4)}</span></div>`;
-  document.getElementById('hudmeta').textContent = `${nVerts.toLocaleString()} verts · ${hasFaces ? nTris.toLocaleString() + ' tris' : 'point cloud'}`;
   document.getElementById('placeBtn').disabled = false;
-  flash('Surface loaded');
+  renderMeshInfo();
+  return true;
 }
-function trimName(n) { return n.length > 20 ? n.slice(0, 17) + '…' : n; }
+function reframe() {
+  // bounding sphere over ALL meshes
+  const box = new THREE.Box3();
+  meshes.forEach(m => { m.obj.geometry.computeBoundingBox(); box.union(m.obj.geometry.boundingBox); });
+  const sph = box.getBoundingSphere(new THREE.Sphere());
+  meshRadius = sph.radius || 1; meshCenter.copy(sph.center);
+  modelGroup.position.copy(meshCenter).multiplyScalar(-1);
+  // point-cloud point size depends on radius
+  meshes.forEach(m => { if (!m.hasFaces) m.obj.material.size = meshRadius * 0.006; });
+  ctrl.target.set(0, 0, 0);
+  if (!reframe._framed) { ctrl.spherical.set(meshRadius * 2.6, Math.PI / 2.3, Math.PI / 4); reframe._framed = true; }
+  applyCamera();
+}
+function renderMeshInfo() {
+  const el = document.getElementById('meshinfo');
+  if (!meshes.length) { el.innerHTML = '<div class="stat-row"><span>no file loaded</span><span></span></div>'; return; }
+  el.innerHTML = meshes.map((m, i) => `
+    <div class="mesh-item">
+      <div class="mesh-item-h">
+        <span class="mswatch" style="background:#${MESH_TINTS[i % MESH_TINTS.length].toString(16).padStart(6,'0')}"></span>
+        <span class="mesh-name">${trimName(m.name)}</span>
+        <span class="mesh-verts">${m.verts.toLocaleString()}</span>
+      </div>
+      <div class="op-row">
+        <span>opacity</span>
+        <input type="range" class="op-slider" data-op="${i}" min="0.1" max="1" step="0.05" value="${m.mat.opacity}">
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('.op-slider').forEach(s => s.addEventListener('input', () => {
+    const m = meshes[+s.dataset.op]; m.mat.opacity = parseFloat(s.value); m.mat.depthWrite = m.mat.opacity > 0.98;
+  }));
+  document.getElementById('hudmeta').textContent = meshes.map(m => `${m.verts.toLocaleString()} v`).join(' + ');
+}
+function trimName(n) { return n.length > 18 ? n.slice(0, 15) + '…' : n; }
+
+/* ---------- Default meshes + saved-map loading (runs on startup) ---------- */
+const DEFAULT_MESHES = ['mesh1.vtk', 'mesh2.vtk'];
+async function bootstrap() {
+  const params = new URLSearchParams(location.search);
+  const mapName = params.get('map'); // e.g. EndoMaze5
+  // 1) try to load default meshes shipped next to index.html
+  let loadedAny = false;
+  for (let i = 0; i < DEFAULT_MESHES.length; i++) {
+    try {
+      const res = await fetch(DEFAULT_MESHES[i]);
+      if (!res.ok) continue;
+      const buf = await res.arrayBuffer();
+      if (addMeshFromBuffer(buf, DEFAULT_MESHES[i], i)) loadedAny = true;
+    } catch (_) { /* file not present — fine, user can still drag-drop */ }
+  }
+  if (!loadedAny) {
+    // no defaults in repo yet — show the drop screen
+    document.getElementById('drop').classList.remove('hidden');
+    document.querySelector('#drop h2').textContent = 'Drop a legacy .vtk file';
+  }
+  // 2) if ?map=… present, fetch and render that saved point set
+  if (mapName) await loadSavedMap(mapName);
+}
+async function loadSavedMap(mapName) {
+  const file = mapName.endsWith('.json') ? mapName : mapName + '.json';
+  try {
+    const res = await fetch(file);
+    if (!res.ok) { flash(`${file} not found in repo`, true); return; }
+    const data = await res.json();
+    clearPoints();
+    (data.points || []).forEach(pt => {
+      const local = new THREE.Vector3(pt.x, pt.y, pt.z);
+      const world = modelGroup.localToWorld(local.clone());
+      addPoint(world, (pt.group === 'PFA' ? 'PFA' : 'RF'), pt.comment || '');
+    });
+    const n = parseInt((mapName.match(/\d+/) || ['1'])[0], 10);
+    document.getElementById('mapNum').value = isNaN(n) ? 1 : n;
+    flash(`Loaded ${data.map || mapName} · ${(data.points||[]).length} lesions`);
+  } catch (err) { flash('Could not load ' + file, true); }
+}
 
 /* ---------- Point list ---------- */
 function renderPointList() {
@@ -540,7 +628,7 @@ function setPlacing(on) {
 document.getElementById('placeBtn').addEventListener('click', () => setPlacing(!placing));
 window.addEventListener('keydown', e => {
   if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
-  if (e.key === 'p' || e.key === 'P') { if (mesh) setPlacing(!placing); }
+  if (e.key === 'p' || e.key === 'P') { if (meshes.length) setPlacing(!placing); }
   if (e.key === 'Escape') setPlacing(false);
 });
 
@@ -565,11 +653,23 @@ document.getElementById('clearBtn').addEventListener('click', () => { if (confir
 
 /* ---------- File input / drag-drop ---------- */
 const drop = document.getElementById('drop'); const fileInput = document.getElementById('fileInput');
-fileInput.addEventListener('change', e => { const f = e.target.files[0]; if (f) readFile(f); });
-function readFile(f) { const rd = new FileReader(); rd.onload = () => loadMeshFromBuffer(rd.result, f.name); rd.readAsArrayBuffer(f); }
+fileInput.addEventListener('change', e => { readFiles([...e.target.files]); });
+function readFiles(files) {
+  const vtks = files.filter(f => /\.vtk$/i.test(f.name));
+  if (!vtks.length) return;
+  clearMeshes(); clearPoints(); reframe._framed = false;
+  let i = 0;
+  const next = () => {
+    if (i >= vtks.length) return;
+    const f = vtks[i]; const rd = new FileReader();
+    rd.onload = () => { addMeshFromBuffer(rd.result, f.name, i); i++; next(); };
+    rd.readAsArrayBuffer(f);
+  };
+  next();
+}
 ['dragenter', 'dragover'].forEach(ev => window.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hot'); drop.classList.remove('hidden'); }));
-window.addEventListener('dragleave', e => { e.preventDefault(); drop.classList.remove('hot'); if (mesh) drop.classList.add('hidden'); });
-window.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('hot'); const f = e.dataTransfer.files[0]; if (f) readFile(f); else if (mesh) drop.classList.add('hidden'); });
+window.addEventListener('dragleave', e => { e.preventDefault(); drop.classList.remove('hot'); if (meshes.length) drop.classList.add('hidden'); });
+window.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('hot'); const fs = [...e.dataTransfer.files]; if (fs.length) readFiles(fs); else if (meshes.length) drop.classList.add('hidden'); });
 
 /* ---------- Toast ---------- */
 let toastT;
@@ -586,6 +686,7 @@ window.addEventListener('resize', resize);
 document.documentElement.style.setProperty('--active', 'var(--rf)');
 resize(); applyCamera();
 (function loop() { requestAnimationFrame(loop); renderer.render(scene, camera); })();
+bootstrap();
 </script>
 </body>
 </html>
