@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mesh Studio — VTK Viewer</title>
+<title>ViewTK — VTK Viewer</title>
 <style>
   :root {
     --ink: #0a0e14;
@@ -12,8 +12,9 @@
     --line: #232d3d;
     --text: #dfe6f0;
     --muted: #7d8aa0;
-    --signal: #4fd1c5;   /* teal — data */
-    --marker: #ffb020;   /* amber — placed points */
+    --signal: #4fd1c5;   /* teal — mesh */
+    --rf: #ffb020;       /* amber — RF lesions */
+    --pfa: #a78bfa;      /* violet — PFA lesions */
     --warn: #ff5c72;
     --mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
     --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -25,7 +26,7 @@
     background: var(--ink);
     color: var(--text);
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr 340px;
     grid-template-rows: 100vh;
   }
 
@@ -35,21 +36,14 @@
 
   #hud {
     position: absolute; top: 0; left: 0;
-    padding: 14px 18px;
-    pointer-events: none;
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    color: var(--muted);
-    line-height: 1.7;
+    padding: 14px 18px; pointer-events: none;
+    font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.04em; color: var(--muted); line-height: 1.7;
   }
   #hud .title {
-    font-family: var(--sans);
-    font-size: 13px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--text);
-    font-weight: 600;
+    font-family: var(--sans); font-size: 13px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--text); font-weight: 600;
   }
   #hud .title b { color: var(--signal); font-weight: 600; }
 
@@ -58,151 +52,154 @@
     display: flex; align-items: center; justify-content: center;
     flex-direction: column; gap: 14px;
     background: radial-gradient(ellipse at center, rgba(79,209,197,0.05), transparent 70%);
-    text-align: center;
-    transition: background 0.15s;
+    text-align: center; transition: background 0.15s;
   }
   #drop.hot { background: rgba(79,209,197,0.10); }
   #drop.hidden { display: none; }
   #drop .glyph {
-    width: 64px; height: 64px;
-    border: 1.5px dashed var(--line);
-    border-radius: 3px;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--signal);
-    position: relative;
+    width: 64px; height: 64px; border: 1.5px dashed var(--line);
+    border-radius: 3px; display: flex; align-items: center; justify-content: center;
+    color: var(--signal); position: relative;
   }
-  #drop .glyph::before,
-  #drop .glyph::after {
-    content: ""; position: absolute;
-    background: var(--signal);
-  }
+  #drop .glyph::before, #drop .glyph::after { content: ""; position: absolute; background: var(--signal); }
   #drop .glyph::before { width: 20px; height: 1.5px; }
   #drop .glyph::after { width: 1.5px; height: 20px; }
   #drop h2 { font-weight: 500; font-size: 16px; letter-spacing: 0.02em; }
   #drop p { color: var(--muted); font-size: 13px; }
-  #drop label {
-    pointer-events: auto; cursor: pointer;
-    color: var(--signal); text-decoration: underline;
-    text-underline-offset: 3px;
-  }
+  #drop label { pointer-events: auto; cursor: pointer; color: var(--signal); text-decoration: underline; text-underline-offset: 3px; }
   #fileInput { display: none; }
 
   #modebadge {
     position: absolute; bottom: 16px; left: 18px;
     font-family: var(--mono); font-size: 11px;
-    padding: 6px 11px; border-radius: 2px;
-    border: 1px solid var(--line);
-    background: rgba(17,23,33,0.8);
-    backdrop-filter: blur(6px);
-    letter-spacing: 0.06em;
-    display: flex; align-items: center; gap: 8px;
+    padding: 6px 11px; border-radius: 2px; border: 1px solid var(--line);
+    background: rgba(17,23,33,0.8); backdrop-filter: blur(6px);
+    letter-spacing: 0.06em; display: flex; align-items: center; gap: 8px;
   }
   #modebadge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
-  #modebadge.placing .dot { background: var(--marker); box-shadow: 0 0 8px var(--marker); }
-  #modebadge.placing { color: var(--marker); border-color: rgba(255,176,32,0.4); }
+  #modebadge.placing .dot { background: var(--active); box-shadow: 0 0 8px var(--active); }
+  #modebadge.placing { color: var(--active); border-color: var(--active); }
 
   /* ---- Side panel ---- */
-  #panel {
-    background: var(--panel);
-    border-left: 1px solid var(--line);
-    display: flex; flex-direction: column;
-    overflow: hidden;
-  }
+  #panel { background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; overflow: hidden; }
   .sect { border-bottom: 1px solid var(--line); }
   .sect-h {
-    padding: 13px 18px 11px;
-    font-family: var(--mono); font-size: 10px;
-    letter-spacing: 0.16em; text-transform: uppercase;
-    color: var(--muted);
+    padding: 13px 18px 11px; font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
     display: flex; justify-content: space-between; align-items: baseline;
   }
-  .sect-h .count { color: var(--marker); font-variant-numeric: tabular-nums; }
+  .sect-h .count { color: var(--text); font-variant-numeric: tabular-nums; }
   .sect-b { padding: 0 18px 16px; }
 
-  .stat-row {
-    display: flex; justify-content: space-between;
-    font-family: var(--mono); font-size: 12px;
-    padding: 3px 0; color: var(--text);
-  }
+  .stat-row { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; padding: 3px 0; color: var(--text); }
   .stat-row span:first-child { color: var(--muted); }
   .stat-row span:last-child { font-variant-numeric: tabular-nums; }
 
   .btn {
-    width: 100%; padding: 10px;
-    background: var(--panel-2);
-    border: 1px solid var(--line);
-    color: var(--text);
-    font-family: var(--sans); font-size: 13px;
-    border-radius: 2px; cursor: pointer;
+    width: 100%; padding: 10px; background: var(--panel-2);
+    border: 1px solid var(--line); color: var(--text);
+    font-family: var(--sans); font-size: 13px; border-radius: 2px; cursor: pointer;
     transition: border-color 0.12s, background 0.12s;
     display: flex; align-items: center; justify-content: center; gap: 8px;
   }
   .btn:hover { border-color: var(--signal); }
-  .btn.active {
-    background: rgba(255,176,32,0.12);
-    border-color: var(--marker); color: var(--marker);
-  }
+  .btn.active { background: color-mix(in srgb, var(--active) 14%, transparent); border-color: var(--active); color: var(--active); }
   .btn.ghost { background: transparent; }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .btn-row { display: flex; gap: 8px; margin-top: 8px; }
   .btn-row .btn { font-size: 12px; padding: 8px; }
 
-  .kbd {
-    font-family: var(--mono); font-size: 10px;
-    padding: 1px 5px; border: 1px solid var(--line);
-    border-radius: 2px; color: var(--muted);
-  }
+  .kbd { font-family: var(--mono); font-size: 10px; padding: 1px 5px; border: 1px solid var(--line); border-radius: 2px; color: var(--muted); }
 
-  #points { flex: 1; overflow-y: auto; }
+  /* group toggle */
+  .grp-toggle { display: flex; gap: 8px; margin-bottom: 10px; }
+  .grp-btn {
+    flex: 1; padding: 9px; border-radius: 2px; cursor: pointer;
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    transition: all 0.12s;
+  }
+  .grp-btn .swatch { width: 9px; height: 9px; border-radius: 50%; }
+  .grp-btn[data-g="RF"] .swatch { background: var(--rf); }
+  .grp-btn[data-g="PFA"] .swatch { background: var(--pfa); }
+  .grp-btn.on[data-g="RF"] { border-color: var(--rf); color: var(--rf); background: color-mix(in srgb, var(--rf) 12%, transparent); }
+  .grp-btn.on[data-g="PFA"] { border-color: var(--pfa); color: var(--pfa); background: color-mix(in srgb, var(--pfa) 12%, transparent); }
+
+  /* size slider */
+  .slider-lab { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .slider-lab b { color: var(--text); font-weight: 400; }
+  input[type=range] { width: 100%; accent-color: var(--signal); cursor: pointer; }
+
+  #points { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
   #ptlist { padding: 4px 10px 14px; }
   .pt {
-    display: grid; grid-template-columns: 20px 1fr auto;
-    align-items: center; gap: 8px;
-    padding: 7px 8px; border-radius: 2px;
-    font-family: var(--mono); font-size: 11px;
-    cursor: pointer;
+    border-radius: 3px; padding: 8px 9px; margin-bottom: 3px;
+    font-family: var(--mono); font-size: 11px; border: 1px solid transparent;
   }
   .pt:hover { background: var(--panel-2); }
+  .pt-head { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 8px; cursor: pointer; }
   .pt .idx {
-    color: var(--ink); background: var(--marker);
-    width: 18px; height: 18px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 10px; font-weight: 700;
+    color: var(--ink); width: 18px; height: 18px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700;
   }
+  .pt[data-g="RF"] .idx { background: var(--rf); }
+  .pt[data-g="PFA"] .idx { background: var(--pfa); }
   .pt .coord { color: var(--muted); line-height: 1.4; }
   .pt .coord b { color: var(--text); font-weight: 400; }
-  .pt .del {
-    color: var(--muted); border: none; background: none;
-    cursor: pointer; font-size: 15px; padding: 0 4px;
-    opacity: 0; transition: opacity 0.1s, color 0.1s;
-  }
+  .pt .del { color: var(--muted); border: none; background: none; cursor: pointer; font-size: 15px; padding: 0 4px; opacity: 0; transition: opacity 0.1s, color 0.1s; }
   .pt:hover .del { opacity: 1; }
   .pt .del:hover { color: var(--warn); }
-
-  .empty {
-    padding: 24px 18px; text-align: center;
-    color: var(--muted); font-size: 12px; line-height: 1.6;
+  .pt-body { margin-top: 7px; padding-left: 28px; display: flex; flex-direction: column; gap: 6px; }
+  .pt-grp { display: flex; gap: 6px; }
+  .pt-grp button {
+    flex: 1; font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em;
+    padding: 4px; border-radius: 2px; cursor: pointer; background: transparent;
+    border: 1px solid var(--line); color: var(--muted);
   }
+  .pt-grp button.on[data-g="RF"] { border-color: var(--rf); color: var(--rf); }
+  .pt-grp button.on[data-g="PFA"] { border-color: var(--pfa); color: var(--pfa); }
+  .pt-note {
+    width: 100%; background: var(--ink); border: 1px solid var(--line); border-radius: 2px;
+    color: var(--text); font-family: var(--sans); font-size: 12px; padding: 6px 8px; resize: vertical;
+    min-height: 30px;
+  }
+  .pt-note:focus { outline: none; border-color: var(--signal); }
+  .pt-note::placeholder { color: var(--muted); }
 
+  .empty { padding: 24px 18px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.6; }
   #points::-webkit-scrollbar { width: 8px; }
   #points::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 
+  .save-row { display: flex; gap: 8px; }
+  .save-row .prefix {
+    display: flex; align-items: center; padding: 0 4px 0 10px;
+    background: var(--ink); border: 1px solid var(--line); border-right: none;
+    border-radius: 2px 0 0 2px; font-family: var(--mono); font-size: 13px; color: var(--muted);
+  }
+  #mapNum {
+    width: 60px; background: var(--ink); border: 1px solid var(--line); border-left: none;
+    color: var(--text); font-family: var(--mono); font-size: 13px; padding: 8px 6px;
+    border-radius: 0; -moz-appearance: textfield;
+  }
+  #mapNum:focus { outline: none; }
+  #saveBtn { flex: 1; border-radius: 0 2px 2px 0; }
+
   .toast {
-    position: absolute; bottom: 16px; left: 50%;
-    transform: translateX(-50%) translateY(20px);
-    background: var(--warn); color: #fff;
-    padding: 9px 16px; border-radius: 3px;
-    font-size: 12px; font-family: var(--mono);
-    opacity: 0; transition: all 0.25s; pointer-events: none;
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--signal); color: var(--ink); padding: 9px 16px; border-radius: 3px;
+    font-size: 12px; font-family: var(--mono); font-weight: 600; opacity: 0;
+    transition: all 0.25s; pointer-events: none;
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { background: var(--warn); color: #fff; }
 </style>
 </head>
 <body>
   <div id="stage">
     <canvas id="gl"></canvas>
     <div id="hud">
-      <div class="title">MESH <b>STUDIO</b></div>
+      <div class="title">VIEW<b>TK</b></div>
       <div id="hudmeta"></div>
     </div>
     <div id="modebadge"><span class="dot"></span><span id="modetext">Orbit</span></div>
@@ -226,83 +223,82 @@
     <div class="sect">
       <div class="sect-h">Placement</div>
       <div class="sect-b">
-        <button class="btn" id="placeBtn" disabled>
-          <span>Place points</span>
-        </button>
+        <div class="grp-toggle">
+          <div class="grp-btn on" data-g="RF"><span class="swatch"></span>RF</div>
+          <div class="grp-btn" data-g="PFA"><span class="swatch"></span>PFA</div>
+        </div>
+        <button class="btn" id="placeBtn" disabled><span>Place points</span></button>
         <div style="margin-top:9px; font-size:11px; color:var(--muted); line-height:1.6;">
-          Toggle on, then click the surface to drop a marker.
-          <span class="kbd">P</span> toggles · <span class="kbd">Esc</span> exits
+          Pick a group, toggle on, click the surface to drop a lesion.
+          <span class="kbd">P</span> toggle · <span class="kbd">Esc</span> exit
         </div>
       </div>
     </div>
 
-    <div class="sect" id="points" style="display:flex; flex-direction:column;">
+    <div class="sect">
+      <div class="sect-h">Marker size</div>
+      <div class="sect-b">
+        <div class="slider-lab"><span>scale</span><b id="sizeVal">1.0×</b></div>
+        <input type="range" id="sizeSlider" min="0.3" max="3" step="0.1" value="1">
+      </div>
+    </div>
+
+    <div class="sect" id="points">
       <div class="sect-h">
-        <span>Points</span><span class="count" id="ptcount">0</span>
+        <span>Lesions</span>
+        <span class="count"><span id="rfCount" style="color:var(--rf)">0 RF</span> · <span id="pfaCount" style="color:var(--pfa)">0 PFA</span></span>
       </div>
       <div id="ptlist"></div>
-      <div class="empty" id="ptempty">No points yet.<br>Placed markers appear here with their model-space coordinates.</div>
+      <div class="empty" id="ptempty">No lesions yet.<br>Placed markers appear here — set their group, add a note, edit anytime.</div>
     </div>
 
     <div class="sect" style="border-bottom:none;">
       <div class="sect-b" style="padding-top:14px;">
-        <div class="btn-row">
-          <button class="btn ghost" id="exportBtn" disabled>Export JSON</button>
-          <button class="btn ghost" id="clearBtn" disabled>Clear all</button>
+        <div class="save-row">
+          <span class="prefix">EndoMaze</span>
+          <input type="number" id="mapNum" min="0" value="1">
+          <button class="btn" id="saveBtn" disabled>Save</button>
         </div>
+        <button class="btn ghost" id="clearBtn" disabled style="margin-top:8px;">Clear all</button>
       </div>
     </div>
   </aside>
 
 <script type="importmap">
-{ "imports": {
-  "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js"
-}}
+{ "imports": { "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js" }}
 </script>
 <script type="module">
 import * as THREE from 'three';
 
 /* ============================================================
    Legacy VTK parser — ASCII + BINARY, POLYDATA / UNSTRUCTURED_GRID
-   Returns { positions:Float32Array, indices:Uint32Array|null }
    ============================================================ */
 function parseVTK(buffer) {
   const bytes = new Uint8Array(buffer);
-  // Read header text (up to a reasonable cap) to detect ASCII/BINARY
   const headText = new TextDecoder('ascii').decode(bytes.subarray(0, Math.min(bytes.length, 4096)));
   const isBinary = /\bBINARY\b/.test(headText.split('\n').slice(0, 4).join('\n'));
   return isBinary ? parseBinary(bytes) : parseASCII(new TextDecoder('utf-8').decode(bytes));
 }
-
-/* ---------- ASCII ---------- */
 function parseASCII(text) {
   const toks = text.split(/\s+/).filter(t => t.length);
-  let i = 0;
-  const positions = [];
-  let indices = [];
-  let cellType = null; // 'polys' | 'cells'
-
+  let i = 0; const positions = []; let indices = [];
   while (i < toks.length) {
     const t = toks[i];
     if (t === 'POINTS') {
-      const n = parseInt(toks[i + 1], 10);
-      i += 3; // POINTS n datatype
+      const n = parseInt(toks[i + 1], 10); i += 3;
       for (let k = 0; k < n * 3; k++) positions.push(parseFloat(toks[i + k]));
       i += n * 3;
     } else if (t === 'POLYGONS' || t === 'TRIANGLE_STRIPS') {
       const strips = t === 'TRIANGLE_STRIPS';
-      const nCells = parseInt(toks[i + 1], 10);
-      i += 3; // KEYWORD nCells size
+      const nCells = parseInt(toks[i + 1], 10); i += 3;
       for (let c = 0; c < nCells; c++) {
         const cnt = parseInt(toks[i], 10); i++;
         const ids = [];
         for (let k = 0; k < cnt; k++) { ids.push(parseInt(toks[i], 10)); i++; }
         strips ? emitStrip(ids, indices) : emitPoly(ids, indices);
       }
-      cellType = 'polys';
     } else if (t === 'CELLS') {
-      const nCells = parseInt(toks[i + 1], 10);
-      i += 3;
+      const nCells = parseInt(toks[i + 1], 10); i += 3;
       const cells = [];
       for (let c = 0; c < nCells; c++) {
         const cnt = parseInt(toks[i], 10); i++;
@@ -310,55 +306,27 @@ function parseASCII(text) {
         for (let k = 0; k < cnt; k++) { ids.push(parseInt(toks[i], 10)); i++; }
         cells.push(ids);
       }
-      // CELL_TYPES follows
       if (toks[i] === 'CELL_TYPES') {
         const nt = parseInt(toks[i + 1], 10); i += 2;
-        for (let c = 0; c < nt; c++) {
-          const ct = parseInt(toks[i], 10); i++;
-          emitCellByType(ct, cells[c], indices);
-        }
-      } else {
-        cells.forEach(ids => emitPoly(ids, indices));
-      }
-      cellType = 'cells';
-    } else {
-      i++;
-    }
+        for (let c = 0; c < nt; c++) { const ct = parseInt(toks[i], 10); i++; emitCellByType(ct, cells[c], indices); }
+      } else cells.forEach(ids => emitPoly(ids, indices));
+    } else i++;
   }
   return finalize(positions, indices);
 }
-
-/* ---------- BINARY ---------- */
 function parseBinary(bytes) {
-  // Header lines are ASCII, terminated by \n. Find each keyword line,
-  // then read big-endian binary payloads.
-  const dv = new DataView(bytes.buffer);
-  let p = 0;
-  const positions = [];
-  let indices = [];
-
-  function readLine() {
-    let s = '';
-    while (p < bytes.length && bytes[p] !== 10) { s += String.fromCharCode(bytes[p]); p++; }
-    p++; // skip \n
-    return s.trim();
-  }
-
+  const dv = new DataView(bytes.buffer); let p = 0;
+  const positions = []; let indices = [];
+  function readLine() { let s = ''; while (p < bytes.length && bytes[p] !== 10) { s += String.fromCharCode(bytes[p]); p++; } p++; return s.trim(); }
   while (p < bytes.length) {
-    const line = readLine();
-    if (!line) continue;
-    const parts = line.split(/\s+/);
-    const kw = parts[0];
-
+    const line = readLine(); if (!line) continue;
+    const parts = line.split(/\s+/); const kw = parts[0];
     if (kw === 'POINTS') {
-      const n = parseInt(parts[1], 10);
-      const type = (parts[2] || 'float').toLowerCase();
+      const n = parseInt(parts[1], 10); const type = (parts[2] || 'float').toLowerCase();
       const [read, size] = beReader(dv, type);
       for (let k = 0; k < n * 3; k++) { positions.push(read(p)); p += size; }
     } else if (kw === 'POLYGONS' || kw === 'TRIANGLE_STRIPS') {
-      const strips = kw === 'TRIANGLE_STRIPS';
-      const nCells = parseInt(parts[1], 10);
-      const size = parseInt(parts[2], 10); // total ints
+      const strips = kw === 'TRIANGLE_STRIPS'; const nCells = parseInt(parts[1], 10);
       for (let c = 0; c < nCells; c++) {
         const cnt = dv.getInt32(p, false); p += 4;
         const ids = [];
@@ -366,124 +334,78 @@ function parseBinary(bytes) {
         strips ? emitStrip(ids, indices) : emitPoly(ids, indices);
       }
     } else if (kw === 'CELLS') {
-      const nCells = parseInt(parts[1], 10);
-      const cells = [];
+      const nCells = parseInt(parts[1], 10); const cells = [];
       for (let c = 0; c < nCells; c++) {
         const cnt = dv.getInt32(p, false); p += 4;
         const ids = [];
         for (let k = 0; k < cnt; k++) { ids.push(dv.getInt32(p, false)); p += 4; }
         cells.push(ids);
       }
-      const ctLine = readLine(); // CELL_TYPES n
-      const ctParts = ctLine.split(/\s+/);
+      const ctLine = readLine(); const ctParts = ctLine.split(/\s+/);
       if (ctParts[0] === 'CELL_TYPES') {
         const nt = parseInt(ctParts[1], 10);
-        for (let c = 0; c < nt; c++) {
-          const ct = dv.getInt32(p, false); p += 4;
-          emitCellByType(ct, cells[c], indices);
-        }
+        for (let c = 0; c < nt; c++) { const ct = dv.getInt32(p, false); p += 4; emitCellByType(ct, cells[c], indices); }
       }
-    } else {
-      // Unhandled section (POINT_DATA/CELL_DATA/etc). We can't reliably skip
-      // binary payloads of unknown size, so stop — geometry is already parsed.
-      if (positions.length && (kw === 'POINT_DATA' || kw === 'CELL_DATA')) break;
-    }
+    } else if (positions.length && (kw === 'POINT_DATA' || kw === 'CELL_DATA')) break;
   }
   return finalize(positions, indices);
 }
-
 function beReader(dv, type) {
   if (type === 'double') return [(o) => dv.getFloat64(o, false), 8];
-  if (type === 'int')    return [(o) => dv.getInt32(o, false), 4];
-  return [(o) => dv.getFloat32(o, false), 4]; // float default
+  if (type === 'int') return [(o) => dv.getInt32(o, false), 4];
+  return [(o) => dv.getFloat32(o, false), 4];
 }
-
-/* ---------- cell emitters ---------- */
-function emitPoly(ids, out) {           // fan-triangulate any n-gon
-  for (let k = 1; k + 1 < ids.length; k++) out.push(ids[0], ids[k], ids[k + 1]);
-}
-function emitStrip(ids, out) {          // triangle strip
-  for (let k = 0; k + 2 < ids.length; k++) {
-    if (k % 2 === 0) out.push(ids[k], ids[k + 1], ids[k + 2]);
-    else out.push(ids[k + 1], ids[k], ids[k + 2]);
-  }
-}
+function emitPoly(ids, out) { for (let k = 1; k + 1 < ids.length; k++) out.push(ids[0], ids[k], ids[k + 1]); }
+function emitStrip(ids, out) { for (let k = 0; k + 2 < ids.length; k++) { if (k % 2 === 0) out.push(ids[k], ids[k + 1], ids[k + 2]); else out.push(ids[k + 1], ids[k], ids[k + 2]); } }
 function emitCellByType(ct, ids, out) {
-  // VTK_TRIANGLE=5, VTK_TRIANGLE_STRIP=6, VTK_POLYGON=7, VTK_QUAD=9,
-  // VTK_TETRA=10 (surface = 4 faces)
   if (ct === 5 || ct === 7 || ct === 9) emitPoly(ids, out);
   else if (ct === 6) emitStrip(ids, out);
-  else if (ct === 10) {
-    const [a, b, c, d] = ids;
-    out.push(a, b, c, a, c, d, a, d, b, b, d, c);
-  } else if (ids.length >= 3) emitPoly(ids, out);
+  else if (ct === 10) { const [a, b, c, d] = ids; out.push(a, b, c, a, c, d, a, d, b, b, d, c); }
+  else if (ids.length >= 3) emitPoly(ids, out);
 }
-
 function finalize(posArr, idxArr) {
-  const positions = new Float32Array(posArr);
-  let indices = null;
-  if (idxArr.length) {
-    const max = positions.length / 3;
-    indices = max > 65535 ? new Uint32Array(idxArr) : new Uint16Array(idxArr);
-  }
+  const positions = new Float32Array(posArr); let indices = null;
+  if (idxArr.length) { const max = positions.length / 3; indices = max > 65535 ? new Uint32Array(idxArr) : new Uint16Array(idxArr); }
   return { positions, indices };
 }
 
-/* ============================================================
-   Scene
-   ============================================================ */
+/* ============================================================ Scene ============================================================ */
 const canvas = document.getElementById('gl');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0e14);
-
-const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1e6);
-camera.position.set(0, 0, 5);
-
-// lights
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0a0e14);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1e6); camera.position.set(0, 0, 5);
 scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 const key = new THREE.DirectionalLight(0xffffff, 0.8); key.position.set(1, 1, 1); scene.add(key);
 const fill = new THREE.DirectionalLight(0x88aaff, 0.35); fill.position.set(-1, -0.5, -1); scene.add(fill);
 
-const modelGroup = new THREE.Group();
-scene.add(modelGroup);
+const modelGroup = new THREE.Group(); scene.add(modelGroup);
 let mesh = null, meshRadius = 1, meshCenter = new THREE.Vector3();
+const markerGroup = new THREE.Group(); scene.add(markerGroup);
 
-// markers
-const markerGroup = new THREE.Group();
-scene.add(markerGroup);
-const points = []; // { pos:Vector3, obj:Mesh }
+const GROUPS = { RF: 0xffb020, PFA: 0xa78bfa };
+let activeGroup = 'RF';
+let sizeScale = 1.0;
+const points = []; // { pos:Vector3(local), obj:Mesh, group, note }
 
-/* ---------- Orbit controls (self-contained, no external dep) ---------- */
-const ctrl = {
-  target: new THREE.Vector3(),
-  spherical: new THREE.Spherical(5, Math.PI / 2, 0),
-  down: false, button: 0, px: 0, py: 0,
-};
-function applyCamera() {
-  const o = new THREE.Vector3().setFromSpherical(ctrl.spherical).add(ctrl.target);
-  camera.position.copy(o);
-  camera.lookAt(ctrl.target);
-}
+/* ---------- Orbit controls ---------- */
+const ctrl = { target: new THREE.Vector3(), spherical: new THREE.Spherical(5, Math.PI / 2, 0), down: false, button: 0, px: 0, py: 0 };
+function applyCamera() { const o = new THREE.Vector3().setFromSpherical(ctrl.spherical).add(ctrl.target); camera.position.copy(o); camera.lookAt(ctrl.target); }
 canvas.addEventListener('pointerdown', e => {
   if (placing && e.button === 0) { tryPlace(e); return; }
-  ctrl.down = true; ctrl.button = e.button; ctrl.px = e.clientX; ctrl.py = e.clientY;
-  canvas.setPointerCapture(e.pointerId);
+  ctrl.down = true; ctrl.button = e.button; ctrl.px = e.clientX; ctrl.py = e.clientY; canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener('pointermove', e => {
   if (!ctrl.down) return;
-  const dx = e.clientX - ctrl.px, dy = e.clientY - ctrl.py;
-  ctrl.px = e.clientX; ctrl.py = e.clientY;
-  if (ctrl.button === 0) {           // rotate
+  const dx = e.clientX - ctrl.px, dy = e.clientY - ctrl.py; ctrl.px = e.clientX; ctrl.py = e.clientY;
+  if (ctrl.button === 0) {
     ctrl.spherical.theta -= dx * 0.005;
     ctrl.spherical.phi = Math.max(0.001, Math.min(Math.PI - 0.001, ctrl.spherical.phi - dy * 0.005));
-  } else {                            // pan (right / middle)
+  } else {
     const panScale = ctrl.spherical.radius * 0.0015;
     const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
     const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
-    ctrl.target.addScaledVector(right, -dx * panScale);
-    ctrl.target.addScaledVector(up, dy * panScale);
+    ctrl.target.addScaledVector(right, -dx * panScale); ctrl.target.addScaledVector(up, dy * panScale);
   }
   applyCamera();
 });
@@ -497,10 +419,7 @@ canvas.addEventListener('wheel', e => {
 }, { passive: false });
 
 /* ---------- Picking ---------- */
-const raycaster = new THREE.Raycaster();
-const ndc = new THREE.Vector2();
-let placing = false;
-
+const raycaster = new THREE.Raycaster(); const ndc = new THREE.Vector2(); let placing = false;
 function tryPlace(e) {
   if (!mesh) return;
   const r = canvas.getBoundingClientRect();
@@ -508,63 +427,44 @@ function tryPlace(e) {
   ndc.y = -((e.clientY - r.top) / r.height) * 2 + 1;
   raycaster.setFromCamera(ndc, camera);
   const hit = raycaster.intersectObject(mesh, false)[0];
-  if (!hit) { flash('No surface under cursor'); return; }
-  addPoint(hit.point.clone());
+  if (!hit) { flash('No surface under cursor', true); return; }
+  addPoint(hit.point.clone(), activeGroup, '');
 }
-
-function addPoint(worldPos) {
-  const s = meshRadius * 0.012;
-  const geo = new THREE.SphereGeometry(s, 20, 16);
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffb020, emissive: 0x3a2600, roughness: 0.4 });
-  const m = new THREE.Mesh(geo, mat);
-  m.position.copy(worldPos);
-  markerGroup.add(m);
-  // convert world -> model-local coords (accounts for centering offset)
+function markerRadius() { return meshRadius * 0.012 * sizeScale; }
+function addPoint(worldPos, group, note) {
+  const geo = new THREE.SphereGeometry(markerRadius(), 20, 16);
+  const mat = new THREE.MeshStandardMaterial({ color: GROUPS[group], emissive: 0x000000, roughness: 0.4 });
+  mat.emissive.setHex(GROUPS[group]); mat.emissiveIntensity = 0.15;
+  const m = new THREE.Mesh(geo, mat); m.position.copy(worldPos); markerGroup.add(m);
   const local = modelGroup.worldToLocal(worldPos.clone());
-  points.push({ pos: local, obj: m });
+  points.push({ pos: local, obj: m, group, note });
   renderPointList();
 }
+function refreshMarkerSizes() {
+  const r = markerRadius();
+  points.forEach(p => { p.obj.geometry.dispose(); p.obj.geometry = new THREE.SphereGeometry(r, 20, 16); });
+}
+function recolorMarker(p) { p.obj.material.color.setHex(GROUPS[p.group]); p.obj.material.emissive.setHex(GROUPS[p.group]); }
 
 /* ---------- Load ---------- */
 function loadMeshFromBuffer(buffer, filename) {
   let parsed;
-  try { parsed = parseVTK(buffer); }
-  catch (err) { flash('Parse failed: ' + err.message); return; }
-  if (!parsed.positions.length) { flash('No POINTS found in file'); return; }
-
-  // clear previous
+  try { parsed = parseVTK(buffer); } catch (err) { flash('Parse failed: ' + err.message, true); return; }
+  if (!parsed.positions.length) { flash('No POINTS found in file', true); return; }
   if (mesh) { modelGroup.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
   clearPoints();
-
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(parsed.positions, 3));
   if (parsed.indices) geo.setIndex(new THREE.BufferAttribute(parsed.indices, 1));
-  geo.computeVertexNormals();
-  geo.computeBoundingSphere();
-
-  const bs = geo.boundingSphere;
-  meshRadius = bs.radius || 1;
-  meshCenter.copy(bs.center);
-  // recenter model at origin for stable orbiting
+  geo.computeVertexNormals(); geo.computeBoundingSphere();
+  const bs = geo.boundingSphere; meshRadius = bs.radius || 1; meshCenter.copy(bs.center);
   modelGroup.position.copy(meshCenter).multiplyScalar(-1);
-
   const hasFaces = !!parsed.indices;
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x4fd1c5, roughness: 0.55, metalness: 0.0,
-    side: THREE.DoubleSide, flatShading: false,
-  });
-  mesh = hasFaces
-    ? new THREE.Mesh(geo, mat)
-    : new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x4fd1c5, size: meshRadius * 0.006 }));
+  const mat = new THREE.MeshStandardMaterial({ color: 0x4fd1c5, roughness: 0.55, metalness: 0.0, side: THREE.DoubleSide });
+  mesh = hasFaces ? new THREE.Mesh(geo, mat) : new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x4fd1c5, size: meshRadius * 0.006 }));
   modelGroup.add(mesh);
-
-  // frame camera
-  ctrl.target.set(0, 0, 0);
-  ctrl.spherical.set(meshRadius * 2.6, Math.PI / 2.3, Math.PI / 4);
-  applyCamera();
-
-  const nVerts = parsed.positions.length / 3;
-  const nTris = parsed.indices ? parsed.indices.length / 3 : 0;
+  ctrl.target.set(0, 0, 0); ctrl.spherical.set(meshRadius * 2.6, Math.PI / 2.3, Math.PI / 4); applyCamera();
+  const nVerts = parsed.positions.length / 3; const nTris = parsed.indices ? parsed.indices.length / 3 : 0;
   document.getElementById('drop').classList.add('hidden');
   document.getElementById('meshinfo').innerHTML = `
     <div class="stat-row"><span>file</span><span>${trimName(filename)}</span></div>
@@ -573,116 +473,118 @@ function loadMeshFromBuffer(buffer, filename) {
     <div class="stat-row"><span>radius</span><span>${meshRadius.toPrecision(4)}</span></div>`;
   document.getElementById('hudmeta').textContent = `${nVerts.toLocaleString()} verts · ${hasFaces ? nTris.toLocaleString() + ' tris' : 'point cloud'}`;
   document.getElementById('placeBtn').disabled = false;
-  flash('', true);
+  flash('Surface loaded');
 }
+function trimName(n) { return n.length > 20 ? n.slice(0, 17) + '…' : n; }
 
-function trimName(n) { return n.length > 22 ? n.slice(0, 19) + '…' : n; }
-
-/* ---------- Point list UI ---------- */
+/* ---------- Point list ---------- */
 function renderPointList() {
-  const list = document.getElementById('ptlist');
-  const empty = document.getElementById('ptempty');
-  document.getElementById('ptcount').textContent = points.length;
+  const list = document.getElementById('ptlist'); const empty = document.getElementById('ptempty');
+  const rf = points.filter(p => p.group === 'RF').length; const pfa = points.length - rf;
+  document.getElementById('rfCount').textContent = rf + ' RF';
+  document.getElementById('pfaCount').textContent = pfa + ' PFA';
   const has = points.length > 0;
   empty.style.display = has ? 'none' : 'block';
-  document.getElementById('exportBtn').disabled = !has;
+  document.getElementById('saveBtn').disabled = !has;
   document.getElementById('clearBtn').disabled = !has;
   list.innerHTML = points.map((p, i) => `
-    <div class="pt" data-i="${i}">
-      <span class="idx">${i + 1}</span>
-      <span class="coord">
-        <b>x</b> ${p.pos.x.toFixed(3)} &nbsp; <b>y</b> ${p.pos.y.toFixed(3)}<br>
-        <b>z</b> ${p.pos.z.toFixed(3)}
-      </span>
-      <button class="del" data-del="${i}" title="Remove">×</button>
+    <div class="pt" data-g="${p.group}" data-i="${i}">
+      <div class="pt-head">
+        <span class="idx">${i + 1}</span>
+        <span class="coord"><b>x</b> ${p.pos.x.toFixed(2)} <b>y</b> ${p.pos.y.toFixed(2)} <b>z</b> ${p.pos.z.toFixed(2)}</span>
+        <button class="del" data-del="${i}" title="Remove">×</button>
+      </div>
+      <div class="pt-body">
+        <div class="pt-grp">
+          <button data-setg="${i}" data-group="RF" class="${p.group === 'RF' ? 'on' : ''}" data-g="RF">RF</button>
+          <button data-setg="${i}" data-group="PFA" class="${p.group === 'PFA' ? 'on' : ''}" data-g="PFA">PFA</button>
+        </div>
+        <textarea class="pt-note" data-note="${i}" placeholder="Add a comment…">${escapeHtml(p.note)}</textarea>
+      </div>
     </div>`).join('');
-  list.querySelectorAll('.del').forEach(b =>
-    b.addEventListener('click', ev => { ev.stopPropagation(); removePoint(+b.dataset.del); }));
-  list.querySelectorAll('.pt').forEach(row =>
-    row.addEventListener('click', () => focusPoint(+row.dataset.i)));
+  list.querySelectorAll('.del').forEach(b => b.addEventListener('click', ev => { ev.stopPropagation(); removePoint(+b.dataset.del); }));
+  list.querySelectorAll('.pt-head').forEach(h => h.addEventListener('click', ev => { if (ev.target.classList.contains('del')) return; focusPoint(+h.parentElement.dataset.i); }));
+  list.querySelectorAll('[data-setg]').forEach(b => b.addEventListener('click', () => { setGroup(+b.dataset.setg, b.dataset.group); }));
+  list.querySelectorAll('[data-note]').forEach(t => t.addEventListener('input', () => { points[+t.dataset.note].note = t.value; }));
 }
-function removePoint(i) {
-  const p = points[i];
-  markerGroup.remove(p.obj); p.obj.geometry.dispose(); p.obj.material.dispose();
-  points.splice(i, 1); renderPointList();
-}
-function clearPoints() {
-  points.forEach(p => { markerGroup.remove(p.obj); p.obj.geometry.dispose(); p.obj.material.dispose(); });
-  points.length = 0; renderPointList();
-}
-function focusPoint(i) {
-  const world = modelGroup.localToWorld(points[i].pos.clone());
-  ctrl.target.copy(world); applyCamera();
-}
+function escapeHtml(s) { return (s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+function setGroup(i, g) { points[i].group = g; recolorMarker(points[i]); renderPointList(); }
+function removePoint(i) { const p = points[i]; markerGroup.remove(p.obj); p.obj.geometry.dispose(); p.obj.material.dispose(); points.splice(i, 1); renderPointList(); }
+function clearPoints() { points.forEach(p => { markerGroup.remove(p.obj); p.obj.geometry.dispose(); p.obj.material.dispose(); }); points.length = 0; renderPointList(); }
+function focusPoint(i) { const world = modelGroup.localToWorld(points[i].pos.clone()); ctrl.target.copy(world); applyCamera(); }
+
+/* ---------- Group toggle ---------- */
+document.querySelectorAll('.grp-btn').forEach(b => b.addEventListener('click', () => {
+  activeGroup = b.dataset.g;
+  document.querySelectorAll('.grp-btn').forEach(x => x.classList.toggle('on', x === b));
+  document.documentElement.style.setProperty('--active', b.dataset.g === 'RF' ? 'var(--rf)' : 'var(--pfa)');
+  if (placing) canvas.style.cursor = 'crosshair';
+}));
+
+/* ---------- Size slider ---------- */
+const sizeSlider = document.getElementById('sizeSlider');
+sizeSlider.addEventListener('input', () => {
+  sizeScale = parseFloat(sizeSlider.value);
+  document.getElementById('sizeVal').textContent = sizeScale.toFixed(1) + '×';
+  refreshMarkerSizes();
+});
 
 /* ---------- Placing mode ---------- */
 function setPlacing(on) {
   placing = on;
   document.getElementById('placeBtn').classList.toggle('active', on);
-  const badge = document.getElementById('modebadge');
-  badge.classList.toggle('placing', on);
-  document.getElementById('modetext').textContent = on ? 'Placing points' : 'Orbit';
+  const badge = document.getElementById('modebadge'); badge.classList.toggle('placing', on);
+  document.getElementById('modetext').textContent = on ? `Placing ${activeGroup}` : 'Orbit';
   canvas.style.cursor = on ? 'crosshair' : 'grab';
 }
 document.getElementById('placeBtn').addEventListener('click', () => setPlacing(!placing));
 window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
   if (e.key === 'p' || e.key === 'P') { if (mesh) setPlacing(!placing); }
   if (e.key === 'Escape') setPlacing(false);
 });
 
-/* ---------- Export ---------- */
-document.getElementById('exportBtn').addEventListener('click', () => {
+/* ---------- Save ---------- */
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const num = document.getElementById('mapNum').value || '0';
+  const name = `EndoMaze${num}`;
   const data = {
-    format: 'mesh-studio-points/v1',
+    format: 'viewtk-endomaze/v1',
+    map: name,
     space: 'vtk-model-coordinates',
-    count: points.length,
-    points: points.map((p, i) => ({ id: i + 1, x: p.pos.x, y: p.pos.y, z: p.pos.z })),
+    saved: new Date().toISOString(),
+    counts: { RF: points.filter(p => p.group === 'RF').length, PFA: points.filter(p => p.group === 'PFA').length },
+    points: points.map((p, i) => ({ id: i + 1, group: p.group, comment: p.note || '', x: p.pos.x, y: p.pos.y, z: p.pos.z })),
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = 'points.json'; a.click();
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name + '.json'; a.click();
   URL.revokeObjectURL(a.href);
+  flash(`Saved ${name}.json`);
 });
-document.getElementById('clearBtn').addEventListener('click', clearPoints);
+document.getElementById('clearBtn').addEventListener('click', () => { if (confirm('Remove all lesions?')) clearPoints(); });
 
 /* ---------- File input / drag-drop ---------- */
-const drop = document.getElementById('drop');
-const fileInput = document.getElementById('fileInput');
+const drop = document.getElementById('drop'); const fileInput = document.getElementById('fileInput');
 fileInput.addEventListener('change', e => { const f = e.target.files[0]; if (f) readFile(f); });
-function readFile(f) {
-  const rd = new FileReader();
-  rd.onload = () => loadMeshFromBuffer(rd.result, f.name);
-  rd.readAsArrayBuffer(f);
-}
-['dragenter', 'dragover'].forEach(ev =>
-  window.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hot'); drop.classList.remove('hidden'); }));
-['dragleave', 'drop'].forEach(ev =>
-  window.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('hot'); if (ev === 'drop' && !mesh) {} else if (ev === 'dragleave' && mesh) drop.classList.add('hidden'); }));
-window.addEventListener('drop', e => {
-  e.preventDefault(); drop.classList.remove('hot');
-  const f = e.dataTransfer.files[0];
-  if (f) readFile(f);
-  else if (mesh) drop.classList.add('hidden');
-});
+function readFile(f) { const rd = new FileReader(); rd.onload = () => loadMeshFromBuffer(rd.result, f.name); rd.readAsArrayBuffer(f); }
+['dragenter', 'dragover'].forEach(ev => window.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hot'); drop.classList.remove('hidden'); }));
+window.addEventListener('dragleave', e => { e.preventDefault(); drop.classList.remove('hot'); if (mesh) drop.classList.add('hidden'); });
+window.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('hot'); const f = e.dataTransfer.files[0]; if (f) readFile(f); else if (mesh) drop.classList.add('hidden'); });
 
 /* ---------- Toast ---------- */
 let toastT;
-function flash(msg, hide) {
+function flash(msg, isErr) {
   const t = document.getElementById('toast');
-  if (hide || !msg) { t.classList.remove('show'); return; }
-  t.textContent = msg; t.classList.add('show');
+  if (!msg) { t.classList.remove('show'); return; }
+  t.textContent = msg; t.classList.toggle('err', !!isErr); t.classList.add('show');
   clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-/* ---------- Resize + render loop ---------- */
-function resize() {
-  const r = canvas.parentElement.getBoundingClientRect();
-  renderer.setSize(r.width, r.height, false);
-  camera.aspect = r.width / r.height; camera.updateProjectionMatrix();
-}
+/* ---------- Resize + loop ---------- */
+function resize() { const r = canvas.parentElement.getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); }
 window.addEventListener('resize', resize);
-resize();
-applyCamera();
+document.documentElement.style.setProperty('--active', 'var(--rf)');
+resize(); applyCamera();
 (function loop() { requestAnimationFrame(loop); renderer.render(scene, camera); })();
 </script>
 </body>
